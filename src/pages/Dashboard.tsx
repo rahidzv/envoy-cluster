@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Bot, Cpu, HardDrive, Activity, Server } from "lucide-react";
+import { Bot, Cpu, HardDrive, Activity, Loader2 } from "lucide-react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { StatsCard } from "@/components/dashboard/StatsCard";
@@ -8,26 +8,8 @@ import { BotCard, BotStatus, BotPlatform } from "@/components/dashboard/BotCard"
 import { ResourceChart } from "@/components/dashboard/ResourceChart";
 import { LogViewer } from "@/components/dashboard/LogViewer";
 import { DeployForm } from "@/components/deploy/DeployForm";
-import { cn } from "@/lib/utils";
-
-interface BotData {
-  id: string;
-  name: string;
-  platform: BotPlatform;
-  status: BotStatus;
-  cpuUsage: number;
-  memoryUsage: number;
-  uptime?: string;
-}
-
-// Mock data
-const mockBots: BotData[] = [
-  { id: "1", name: "OrderBot Pro", platform: "telegram", status: "running", cpuUsage: 23, memoryUsage: 18, uptime: "3d 14h" },
-  { id: "2", name: "ModeratorX", platform: "discord", status: "running", cpuUsage: 45, memoryUsage: 32, uptime: "1d 8h" },
-  { id: "3", name: "NotifyHub", platform: "telegram", status: "stopped", cpuUsage: 0, memoryUsage: 0 },
-  { id: "4", name: "SupportDesk", platform: "discord", status: "error", cpuUsage: 0, memoryUsage: 0 },
-  { id: "5", name: "PriceTracker", platform: "telegram", status: "deploying", cpuUsage: 12, memoryUsage: 8 },
-];
+import { useBots } from "@/hooks/useBots";
+import { useProfile } from "@/hooks/useProfile";
 
 const mockChartData = Array.from({ length: 12 }, (_, i) => ({
   time: `${String(i * 2).padStart(2, '0')}:00`,
@@ -39,45 +21,44 @@ const mockLogs = [
   { id: "1", timestamp: "14:32:45", level: "info" as const, message: "Bot started successfully" },
   { id: "2", timestamp: "14:32:46", level: "info" as const, message: "Connected to Telegram API" },
   { id: "3", timestamp: "14:32:47", level: "debug" as const, message: "Listening for /start command" },
-  { id: "4", timestamp: "14:33:12", level: "info" as const, message: "Received message from user @john_doe" },
+  { id: "4", timestamp: "14:33:12", level: "info" as const, message: "Received message from user" },
   { id: "5", timestamp: "14:33:13", level: "info" as const, message: "Processing order #12847" },
   { id: "6", timestamp: "14:33:15", level: "warn" as const, message: "Rate limit approaching: 85/100 requests" },
   { id: "7", timestamp: "14:34:01", level: "error" as const, message: "Failed to fetch external API: timeout" },
   { id: "8", timestamp: "14:34:02", level: "info" as const, message: "Retrying request (attempt 1/3)" },
-  { id: "9", timestamp: "14:34:04", level: "info" as const, message: "External API connected successfully" },
-  { id: "10", timestamp: "14:34:22", level: "info" as const, message: "Order #12847 completed" },
 ];
 
 export const Dashboard = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [bots, setBots] = useState(mockBots);
   const [logs, setLogs] = useState(mockLogs);
+  
+  const { bots, loading, updateBotStatus, deleteBot } = useBots();
+  const { profile } = useProfile();
 
-  const handleStart = (id: string) => {
-    setBots(bots.map(bot => 
-      bot.id === id ? { ...bot, status: "running" as BotStatus, cpuUsage: 15, memoryUsage: 12 } : bot
-    ));
+  const handleStart = async (id: string) => {
+    await updateBotStatus(id, "deploying");
+    setTimeout(async () => {
+      await updateBotStatus(id, "online");
+    }, 1500);
   };
 
-  const handleStop = (id: string) => {
-    setBots(bots.map(bot => 
-      bot.id === id ? { ...bot, status: "stopped" as BotStatus, cpuUsage: 0, memoryUsage: 0 } : bot
-    ));
+  const handleStop = async (id: string) => {
+    await updateBotStatus(id, "stopped");
   };
 
-  const handleRestart = (id: string) => {
-    setBots(bots.map(bot => 
-      bot.id === id ? { ...bot, status: "deploying" as BotStatus } : bot
-    ));
-    setTimeout(() => {
-      setBots(prev => prev.map(bot => 
-        bot.id === id ? { ...bot, status: "running" as BotStatus } : bot
-      ));
+  const handleRestart = async (id: string) => {
+    await updateBotStatus(id, "deploying");
+    setTimeout(async () => {
+      await updateBotStatus(id, "online");
     }, 2000);
   };
 
   const handleViewLogs = (id: string) => {
     setActiveTab("logs");
+  };
+
+  const handleDelete = async (id: string) => {
+    await deleteBot(id);
   };
 
   // Simulate live logs
@@ -102,14 +83,24 @@ export const Dashboard = () => {
     }
   }, [activeTab]);
 
-  const runningBots = bots.filter(b => b.status === "running").length;
-  const totalCpu = bots.reduce((sum, b) => sum + b.cpuUsage, 0);
-  const totalMemory = bots.reduce((sum, b) => sum + b.memoryUsage, 0);
+  const runningBots = bots.filter(b => b.status === "online").length;
+  const totalCpu = bots.reduce((sum, b) => sum + (b.cpu_usage || 0), 0);
+  const totalMemory = bots.reduce((sum, b) => sum + (b.memory_usage || 0), 0);
+
+  const displayName = profile?.full_name?.split(" ")[0] || profile?.email?.split("@")[0] || "Developer";
 
   const renderContent = () => {
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      );
+    }
+
     switch (activeTab) {
       case "deploy":
-        return <DeployForm />;
+        return <DeployForm onSuccess={() => setActiveTab("bots")} />;
       case "logs":
         return (
           <div className="space-y-6">
@@ -117,7 +108,7 @@ export const Dashboard = () => {
               <h1 className="text-2xl font-bold text-foreground mb-2">Live Logs</h1>
               <p className="text-muted-foreground">Real-time container logs from your running bots</p>
             </div>
-            <LogViewer logs={logs} botName="OrderBot Pro" />
+            <LogViewer logs={logs} botName={bots[0]?.name || "All Bots"} />
           </div>
         );
       case "bots":
@@ -127,19 +118,39 @@ export const Dashboard = () => {
               <h1 className="text-2xl font-bold text-foreground mb-2">My Bots</h1>
               <p className="text-muted-foreground">Manage and monitor all your deployed bots</p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {bots.map((bot, index) => (
-                <BotCard
-                  key={bot.id}
-                  {...bot}
-                  onStart={handleStart}
-                  onStop={handleStop}
-                  onRestart={handleRestart}
-                  onViewLogs={handleViewLogs}
-                  delay={index * 0.1}
-                />
-              ))}
-            </div>
+            {bots.length === 0 ? (
+              <div className="bg-card border border-border rounded-xl p-12 text-center card-shadow">
+                <Bot className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold text-foreground mb-2">No bots deployed yet</h3>
+                <p className="text-muted-foreground mb-4">Deploy your first bot to get started</p>
+                <button
+                  onClick={() => setActiveTab("deploy")}
+                  className="text-primary hover:underline font-medium"
+                >
+                  Deploy a bot →
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {bots.map((bot, index) => (
+                  <BotCard
+                    key={bot.id}
+                    id={bot.id}
+                    name={bot.name}
+                    platform={bot.platform as BotPlatform}
+                    status={bot.status as BotStatus}
+                    cpuUsage={bot.cpu_usage || 0}
+                    memoryUsage={bot.memory_usage || 0}
+                    onStart={handleStart}
+                    onStop={handleStop}
+                    onRestart={handleRestart}
+                    onViewLogs={handleViewLogs}
+                    onDelete={handleDelete}
+                    delay={index * 0.1}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         );
       case "metrics":
@@ -174,7 +185,7 @@ export const Dashboard = () => {
                 animate={{ opacity: 1, y: 0 }}
                 className="text-2xl font-bold text-foreground mb-2"
               >
-                Welcome back, Developer
+                Welcome back, {displayName}
               </motion.h1>
               <p className="text-muted-foreground">
                 Here's what's happening with your bots today
@@ -189,19 +200,18 @@ export const Dashboard = () => {
                 subtitle={`${bots.length} total deployed`}
                 icon={Bot} 
                 variant="primary"
-                trend={{ value: 12, positive: true }}
                 delay={0}
               />
               <StatsCard 
                 title="CPU Usage" 
-                value={`${Math.round(totalCpu / bots.length)}%`} 
+                value={bots.length > 0 ? `${Math.round(totalCpu / bots.length)}%` : "0%"} 
                 subtitle="Average across all bots"
                 icon={Cpu} 
                 delay={0.1}
               />
               <StatsCard 
                 title="Memory Usage" 
-                value={`${totalMemory}MB`} 
+                value={`${Math.round(totalMemory)}MB`} 
                 subtitle={`of ${bots.length * 50}MB allocated`}
                 icon={HardDrive} 
                 delay={0.2}
@@ -229,19 +239,38 @@ export const Dashboard = () => {
                     View all
                   </button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {bots.slice(0, 4).map((bot, index) => (
-                    <BotCard
-                      key={bot.id}
-                      {...bot}
-                      onStart={handleStart}
-                      onStop={handleStop}
-                      onRestart={handleRestart}
-                      onViewLogs={handleViewLogs}
-                      delay={index * 0.1}
-                    />
-                  ))}
-                </div>
+                {bots.length === 0 ? (
+                  <div className="bg-card border border-border rounded-xl p-8 text-center card-shadow">
+                    <Bot className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                    <p className="text-muted-foreground mb-2">No bots deployed yet</p>
+                    <button
+                      onClick={() => setActiveTab("deploy")}
+                      className="text-primary hover:underline text-sm font-medium"
+                    >
+                      Deploy your first bot →
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {bots.slice(0, 4).map((bot, index) => (
+                      <BotCard
+                        key={bot.id}
+                        id={bot.id}
+                        name={bot.name}
+                        platform={bot.platform as BotPlatform}
+                        status={bot.status as BotStatus}
+                        cpuUsage={bot.cpu_usage || 0}
+                        memoryUsage={bot.memory_usage || 0}
+                        onStart={handleStart}
+                        onStop={handleStop}
+                        onRestart={handleRestart}
+                        onViewLogs={handleViewLogs}
+                        onDelete={handleDelete}
+                        delay={index * 0.1}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Chart */}

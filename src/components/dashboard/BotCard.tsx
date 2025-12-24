@@ -1,9 +1,16 @@
 import { motion } from "framer-motion";
-import { Play, Square, RotateCcw, Terminal, MoreVertical, Cpu, HardDrive } from "lucide-react";
+import { Play, Square, RotateCcw, Terminal, MoreVertical, Cpu, HardDrive, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-export type BotStatus = "running" | "stopped" | "error" | "deploying";
+export type BotStatus = "online" | "offline" | "deploying" | "error" | "stopped";
 export type BotPlatform = "telegram" | "discord";
 
 interface BotCardProps {
@@ -18,6 +25,7 @@ interface BotCardProps {
   onStop: (id: string) => void;
   onRestart: (id: string) => void;
   onViewLogs: (id: string) => void;
+  onDelete?: (id: string) => void;
   delay?: number;
 }
 
@@ -26,8 +34,9 @@ const platformIcons = {
   discord: "https://cdn.simpleicons.org/discord/5865F2",
 };
 
-const statusConfig = {
-  running: { label: "Running", class: "status-online animate-pulse-glow" },
+const statusConfig: Record<BotStatus, { label: string; class: string }> = {
+  online: { label: "Running", class: "status-online animate-pulse-glow" },
+  offline: { label: "Offline", class: "status-offline" },
   stopped: { label: "Stopped", class: "status-offline" },
   error: { label: "Error", class: "status-error" },
   deploying: { label: "Deploying", class: "status-warning" },
@@ -45,10 +54,11 @@ export const BotCard = ({
   onStop,
   onRestart,
   onViewLogs,
+  onDelete,
   delay = 0,
 }: BotCardProps) => {
-  const isRunning = status === "running";
-  const statusInfo = statusConfig[status];
+  const isRunning = status === "online";
+  const statusInfo = statusConfig[status] || statusConfig.offline;
 
   return (
     <motion.div
@@ -83,9 +93,29 @@ export const BotCard = ({
             </div>
           </div>
         </div>
-        <Button variant="ghost" size="icon-sm">
-          <MoreVertical className="w-4 h-4" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm">
+              <MoreVertical className="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => onViewLogs(id)}>
+              <Terminal className="w-4 h-4 mr-2" />
+              View Logs
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {onDelete && (
+              <DropdownMenuItem 
+                onClick={() => onDelete(id)}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete Bot
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Resource Usage */}
