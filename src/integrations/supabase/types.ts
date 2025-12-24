@@ -14,16 +14,216 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bot_env_vars: {
+        Row: {
+          bot_id: string
+          created_at: string
+          id: string
+          key: string
+          value: string
+        }
+        Insert: {
+          bot_id: string
+          created_at?: string
+          id?: string
+          key: string
+          value: string
+        }
+        Update: {
+          bot_id?: string
+          created_at?: string
+          id?: string
+          key?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_env_vars_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bot_logs: {
+        Row: {
+          bot_id: string
+          created_at: string
+          id: string
+          level: string
+          message: string
+        }
+        Insert: {
+          bot_id: string
+          created_at?: string
+          id?: string
+          level?: string
+          message: string
+        }
+        Update: {
+          bot_id?: string
+          created_at?: string
+          id?: string
+          level?: string
+          message?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_logs_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bots: {
+        Row: {
+          container_id: string | null
+          cpu_usage: number | null
+          created_at: string
+          id: string
+          last_started_at: string | null
+          memory_usage: number | null
+          name: string
+          platform: Database["public"]["Enums"]["bot_platform"]
+          runtime: Database["public"]["Enums"]["bot_runtime"]
+          script_content: string | null
+          status: Database["public"]["Enums"]["bot_status"]
+          updated_at: string
+          uptime_seconds: number | null
+          user_id: string
+        }
+        Insert: {
+          container_id?: string | null
+          cpu_usage?: number | null
+          created_at?: string
+          id?: string
+          last_started_at?: string | null
+          memory_usage?: number | null
+          name: string
+          platform: Database["public"]["Enums"]["bot_platform"]
+          runtime: Database["public"]["Enums"]["bot_runtime"]
+          script_content?: string | null
+          status?: Database["public"]["Enums"]["bot_status"]
+          updated_at?: string
+          uptime_seconds?: number | null
+          user_id: string
+        }
+        Update: {
+          container_id?: string | null
+          cpu_usage?: number | null
+          created_at?: string
+          id?: string
+          last_started_at?: string | null
+          memory_usage?: number | null
+          name?: string
+          platform?: Database["public"]["Enums"]["bot_platform"]
+          runtime?: Database["public"]["Enums"]["bot_runtime"]
+          script_content?: string | null
+          status?: Database["public"]["Enums"]["bot_status"]
+          updated_at?: string
+          uptime_seconds?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string | null
+          full_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      resource_history: {
+        Row: {
+          bot_id: string
+          cpu_usage: number
+          id: string
+          memory_usage: number
+          recorded_at: string
+        }
+        Insert: {
+          bot_id: string
+          cpu_usage?: number
+          id?: string
+          memory_usage?: number
+          recorded_at?: string
+        }
+        Update: {
+          bot_id?: string
+          cpu_usage?: number
+          id?: string
+          memory_usage?: number
+          recorded_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "resource_history_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
+      bot_platform: "telegram" | "discord"
+      bot_runtime: "python" | "nodejs" | "php"
+      bot_status: "online" | "offline" | "deploying" | "error" | "stopped"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +350,11 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+      bot_platform: ["telegram", "discord"],
+      bot_runtime: ["python", "nodejs", "php"],
+      bot_status: ["online", "offline", "deploying", "error", "stopped"],
+    },
   },
 } as const
