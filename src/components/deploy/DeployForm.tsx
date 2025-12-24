@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Upload, Plus, Trash2, Eye, EyeOff, Code, FileCode, Zap } from "lucide-react";
+import { Upload, Plus, Trash2, Eye, EyeOff, FileCode, Zap, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useBots } from "@/hooks/useBots";
 
 interface EnvVar {
   key: string;
@@ -16,7 +17,11 @@ interface EnvVar {
 type Platform = "telegram" | "discord";
 type Runtime = "python" | "nodejs" | "php";
 
-export const DeployForm = () => {
+interface DeployFormProps {
+  onSuccess?: () => void;
+}
+
+export const DeployForm = ({ onSuccess }: DeployFormProps) => {
   const [platform, setPlatform] = useState<Platform>("telegram");
   const [runtime, setRuntime] = useState<Runtime>("python");
   const [envVars, setEnvVars] = useState<EnvVar[]>([
@@ -24,6 +29,9 @@ export const DeployForm = () => {
   ]);
   const [botName, setBotName] = useState("");
   const [script, setScript] = useState("");
+  const [deploying, setDeploying] = useState(false);
+  
+  const { createBot } = useBots();
 
   const addEnvVar = () => {
     setEnvVars([...envVars, { key: "", value: "", hidden: false }]);
@@ -37,6 +45,34 @@ export const DeployForm = () => {
     const updated = [...envVars];
     updated[index] = { ...updated[index], [field]: value };
     setEnvVars(updated);
+  };
+
+  const handleDeploy = async () => {
+    if (!botName.trim()) return;
+    
+    setDeploying(true);
+    try {
+      const envVarsToSave = envVars
+        .filter(ev => ev.key && ev.value)
+        .map(ev => ({ key: ev.key, value: ev.value }));
+      
+      const bot = await createBot(
+        botName,
+        platform,
+        runtime,
+        script || undefined,
+        envVarsToSave
+      );
+      
+      if (bot) {
+        setBotName("");
+        setScript("");
+        setEnvVars([{ key: "BOT_TOKEN", value: "", hidden: true }]);
+        onSuccess?.();
+      }
+    } finally {
+      setDeploying(false);
+    }
   };
 
   const platformOptions: { value: Platform; label: string; icon: string }[] = [
@@ -208,9 +244,21 @@ export const DeployForm = () => {
         </div>
 
         {/* Deploy Button */}
-        <Button variant="glow" size="lg" className="w-full">
-          <Zap className="w-5 h-5" />
-          Deploy Bot
+        <Button 
+          variant="glow" 
+          size="lg" 
+          className="w-full" 
+          onClick={handleDeploy}
+          disabled={!botName.trim() || deploying}
+        >
+          {deploying ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
+            <>
+              <Zap className="w-5 h-5" />
+              Deploy Bot
+            </>
+          )}
         </Button>
       </div>
     </motion.div>
