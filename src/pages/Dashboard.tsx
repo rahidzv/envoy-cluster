@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { Bot, Cpu, HardDrive, Activity, Loader2 } from "lucide-react";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -10,47 +10,35 @@ import { LogViewer } from "@/components/dashboard/LogViewer";
 import { DeployForm } from "@/components/deploy/DeployForm";
 import { useBots } from "@/hooks/useBots";
 import { useProfile } from "@/hooks/useProfile";
-
-const mockChartData = Array.from({ length: 12 }, (_, i) => ({
-  time: `${String(i * 2).padStart(2, '0')}:00`,
-  cpu: Math.floor(Math.random() * 40) + 20,
-  memory: Math.floor(Math.random() * 30) + 15,
-}));
-
-const mockLogs = [
-  { id: "1", timestamp: "14:32:45", level: "info" as const, message: "Bot started successfully" },
-  { id: "2", timestamp: "14:32:46", level: "info" as const, message: "Connected to Telegram API" },
-  { id: "3", timestamp: "14:32:47", level: "debug" as const, message: "Listening for /start command" },
-  { id: "4", timestamp: "14:33:12", level: "info" as const, message: "Received message from user" },
-  { id: "5", timestamp: "14:33:13", level: "info" as const, message: "Processing order #12847" },
-  { id: "6", timestamp: "14:33:15", level: "warn" as const, message: "Rate limit approaching: 85/100 requests" },
-  { id: "7", timestamp: "14:34:01", level: "error" as const, message: "Failed to fetch external API: timeout" },
-  { id: "8", timestamp: "14:34:02", level: "info" as const, message: "Retrying request (attempt 1/3)" },
-];
+import { useResourceMetrics } from "@/hooks/useResourceMetrics";
+import { useBotLogs } from "@/hooks/useBotLogs";
 
 export const Dashboard = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [logs, setLogs] = useState(mockLogs);
   
-  const { bots, loading, updateBotStatus, deleteBot } = useBots();
+  const { bots, loading, startBot, stopBot, restartBot, deleteBot } = useBots();
   const { profile } = useProfile();
+  const { chartData } = useResourceMetrics();
+  const { logs: rawLogs } = useBotLogs();
+
+  // Transform logs to the format LogViewer expects
+  const logs = rawLogs.slice(0, 50).map(log => ({
+    id: log.id,
+    timestamp: new Date(log.created_at).toLocaleTimeString('en-US', { hour12: false }),
+    level: log.level as "info" | "debug" | "warn" | "error",
+    message: log.message,
+  }));
 
   const handleStart = async (id: string) => {
-    await updateBotStatus(id, "deploying");
-    setTimeout(async () => {
-      await updateBotStatus(id, "online");
-    }, 1500);
+    await startBot(id);
   };
 
   const handleStop = async (id: string) => {
-    await updateBotStatus(id, "stopped");
+    await stopBot(id);
   };
 
   const handleRestart = async (id: string) => {
-    await updateBotStatus(id, "deploying");
-    setTimeout(async () => {
-      await updateBotStatus(id, "online");
-    }, 2000);
+    await restartBot(id);
   };
 
   const handleViewLogs = (id: string) => {
@@ -60,28 +48,6 @@ export const Dashboard = () => {
   const handleDelete = async (id: string) => {
     await deleteBot(id);
   };
-
-  // Simulate live logs
-  useEffect(() => {
-    if (activeTab === "logs") {
-      const interval = setInterval(() => {
-        const newLog = {
-          id: Date.now().toString(),
-          timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
-          level: ["info", "debug", "info", "warn"][Math.floor(Math.random() * 4)] as "info" | "debug" | "warn",
-          message: [
-            "Processing incoming message...",
-            "User command received: /help",
-            "Sending response to user",
-            "Database query executed (3ms)",
-            "Webhook delivered successfully",
-          ][Math.floor(Math.random() * 5)],
-        };
-        setLogs(prev => [...prev.slice(-50), newLog]);
-      }, 3000);
-      return () => clearInterval(interval);
-    }
-  }, [activeTab]);
 
   const runningBots = bots.filter(b => b.status === "online").length;
   const totalCpu = bots.reduce((sum, b) => sum + (b.cpu_usage || 0), 0);

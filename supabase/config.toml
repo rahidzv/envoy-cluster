@@ -1,1 +1,13 @@
 project_id = "fwfirkmbnpmyblotmtee"
+
+[functions.bot-manager]
+verify_jwt = false
+
+[functions.bot-heartbeat]
+verify_jwt = false
+
+[functions.bot-logs]
+verify_jwt = false
+
+[functions.resource-metrics]
+verify_jwt = false
