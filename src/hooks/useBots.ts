@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { botApi } from "@/lib/api";
 import type { Database } from "@/integrations/supabase/types";
 
 type Bot = Database["public"]["Tables"]["bots"]["Row"];
-type BotInsert = Database["public"]["Tables"]["bots"]["Insert"];
 type BotEnvVar = Database["public"]["Tables"]["bot_env_vars"]["Row"];
 
 export interface BotWithEnvVars extends Bot {
@@ -17,7 +17,7 @@ export const useBots = () => {
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
 
-  const fetchBots = async () => {
+  const fetchBots = useCallback(async () => {
     if (!user) return;
     
     setLoading(true);
@@ -35,12 +35,47 @@ export const useBots = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     if (user) {
       fetchBots();
     }
+  }, [user, fetchBots]);
+
+  // Set up realtime subscription for bot updates
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel("bots-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "bots",
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            setBots((prev) => [payload.new as Bot, ...prev]);
+          } else if (payload.eventType === "UPDATE") {
+            setBots((prev) =>
+              prev.map((bot) =>
+                bot.id === payload.new.id ? (payload.new as Bot) : bot
+              )
+            );
+          } else if (payload.eventType === "DELETE") {
+            setBots((prev) => prev.filter((bot) => bot.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   const createBot = async (
@@ -53,109 +88,132 @@ export const useBots = () => {
     if (!user) return null;
 
     try {
-      const { data: bot, error: botError } = await supabase
-        .from("bots")
-        .insert({
-          user_id: user.id,
-          name,
-          platform,
-          runtime,
-          script_content: scriptContent,
-          status: "offline",
-        })
-        .select()
-        .single();
+      const result = await botApi.deploy({
+        name,
+        platform,
+        runtime,
+        scriptContent,
+        envVars,
+      });
 
-      if (botError) throw botError;
-
-      // Insert env vars if provided
-      if (envVars && envVars.length > 0 && bot) {
-        const envVarsToInsert = envVars
-          .filter(ev => ev.key && ev.value)
-          .map(ev => ({
-            bot_id: bot.id,
-            key: ev.key,
-            value: ev.value,
-          }));
-
-        if (envVarsToInsert.length > 0) {
-          const { error: envError } = await supabase
-            .from("bot_env_vars")
-            .insert(envVarsToInsert);
-
-          if (envError) throw envError;
-        }
+      if (!result.success) {
+        toast.error(result.message || result.error || "Failed to create bot");
+        return null;
       }
 
       toast.success("Bot created successfully!");
-      await fetchBots();
-      return bot;
+      return result.bot;
     } catch (error: any) {
       console.error("Error creating bot:", error);
-      toast.error("Failed to create bot");
+      toast.error(error.message || "Failed to create bot");
       return null;
     }
   };
 
-  const updateBotStatus = async (botId: string, status: Bot["status"]) => {
+  const startBot = async (botId: string) => {
     try {
-      const updateData: any = { status };
-      
-      if (status === "online") {
-        updateData.last_started_at = new Date().toISOString();
-      }
-      
-      if (status === "offline" || status === "stopped") {
-        updateData.cpu_usage = 0;
-        updateData.memory_usage = 0;
+      // Optimistic update
+      setBots((prev) =>
+        prev.map((bot) =>
+          bot.id === botId ? { ...bot, status: "deploying" as const } : bot
+        )
+      );
+
+      const result = await botApi.start(botId);
+
+      if (!result.success) {
+        // Revert on error
+        await fetchBots();
+        toast.error(result.message || result.error || "Failed to start bot");
+        return false;
       }
 
-      const { error } = await supabase
-        .from("bots")
-        .update(updateData)
-        .eq("id", botId);
-
-      if (error) throw error;
-      
-      setBots(prev => prev.map(bot => 
-        bot.id === botId ? { ...bot, ...updateData } : bot
-      ));
+      toast.success("Bot started successfully");
+      return true;
     } catch (error: any) {
-      console.error("Error updating bot status:", error);
-      toast.error("Failed to update bot status");
+      console.error("Error starting bot:", error);
+      await fetchBots();
+      toast.error("Failed to start bot");
+      return false;
+    }
+  };
+
+  const stopBot = async (botId: string) => {
+    try {
+      const result = await botApi.stop(botId);
+
+      if (!result.success) {
+        toast.error(result.message || result.error || "Failed to stop bot");
+        return false;
+      }
+
+      toast.success("Bot stopped");
+      return true;
+    } catch (error: any) {
+      console.error("Error stopping bot:", error);
+      toast.error("Failed to stop bot");
+      return false;
+    }
+  };
+
+  const restartBot = async (botId: string) => {
+    try {
+      // Optimistic update
+      setBots((prev) =>
+        prev.map((bot) =>
+          bot.id === botId ? { ...bot, status: "deploying" as const } : bot
+        )
+      );
+
+      const result = await botApi.restart(botId);
+
+      if (!result.success) {
+        await fetchBots();
+        toast.error(result.message || result.error || "Failed to restart bot");
+        return false;
+      }
+
+      toast.success("Bot restarted successfully");
+      return true;
+    } catch (error: any) {
+      console.error("Error restarting bot:", error);
+      await fetchBots();
+      toast.error("Failed to restart bot");
+      return false;
     }
   };
 
   const deleteBot = async (botId: string) => {
     try {
-      const { error } = await supabase
-        .from("bots")
-        .delete()
-        .eq("id", botId);
+      const result = await botApi.delete(botId);
 
-      if (error) throw error;
-      
-      setBots(prev => prev.filter(bot => bot.id !== botId));
+      if (!result.success) {
+        toast.error(result.message || result.error || "Failed to delete bot");
+        return false;
+      }
+
       toast.success("Bot deleted");
+      return true;
     } catch (error: any) {
       console.error("Error deleting bot:", error);
       toast.error("Failed to delete bot");
+      return false;
     }
   };
 
-  const addLog = async (botId: string, level: string, message: string) => {
-    try {
-      const { error } = await supabase
-        .from("bot_logs")
-        .insert({
-          bot_id: botId,
-          level,
-          message,
-        });
-
-      if (error) throw error;
-    } catch (error: any) {
-      console.error("Error adding log:", error);
+  // Legacy method for compatibility
+  const updateBotStatus = async (botId: string, status: Bot["status"]) => {
+    if (status === "online") {
+      return startBot(botId);
+    } else if (status === "stopped" || status === "offline") {
+      return stopBot(botId);
+    } else if (status === "deploying") {
+      // This is usually an intermediate state, handled by start/restart
+      setBots((prev) =>
+        prev.map((bot) =>
+          bot.id === botId ? { ...bot, status: "deploying" as const } : bot
+        )
+      );
     }
   };
 
@@ -164,8 +222,10 @@ export const useBots = () => {
     loading,
     fetchBots,
     createBot,
-    updateBotStatus,
+    startBot,
+    stopBot,
+    restartBot,
     deleteBot,
-    addLog,
+    updateBotStatus,
   };
 };
